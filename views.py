@@ -1,3 +1,5 @@
+from django.http import HttpResponseRedirect
+
 class GenericView(object):
     """
     Parent class for all generic views.
