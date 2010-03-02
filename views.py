@@ -1,5 +1,17 @@
 from django.http import HttpResponseRedirect
 
+def decorate_method_with(function_decorator):
+    """
+    This allows seemless re-use of decorators between functions and methods.
+    """
+    def decorate_method(unbound_method):
+        def method_proxy(self, *args, **kwargs):
+            def f(*a, **kw):
+                return unbound_method(self, *a, **kw)
+            return function_decorator(f)(*args, **kwargs)
+        return method_proxy
+    return decorate_method
+
 class GenericView(object):
     """
     Parent class for all generic views.
