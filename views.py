@@ -1,4 +1,6 @@
+from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpResponseRedirect
+from django.template import Context, RequestContext
 
 # This shouldn't be necessary once class based views make it in to django trunk,
 # but till then we need a way to reuse decorators between functions and views.
@@ -15,12 +17,42 @@ def decorate_method_with(function_decorator):
         return method_proxy
     return decorate_method
 
-class GenericView(object):
+class View(object):
     """
-    Parent class for all generic views.
+    Subclassing ``View``:
+    =====================
 
-    This was written by jacobian, don't use this directly, use ObjectView.
+    Just define your own method called ``get_context`` that returns a context
+    dictionary for rendering a template.  The request will be rendered to
+    template using ``self.template_name`` as the template that the context will
+    be rendered to, so you better define that, too.
+
+    If you find the need to redirect a user to another page from within a context
+    method, simply raise the ``HttpRedirect`` exception with a string path of where
+    you would like to redirect the user to, ie
+
+        ``raise HttpRedirect("/auth/permission_denied/")``
+
+    Defining the URLs:
+    ==================
+
+    Note: The following is only necessary until some form of class views are
+    included in Django's trunk, because the framework should take care of this
+    for you.
+
+    In urls.py, you cannot simply pass the object to the url, as you would a
+    function. This would mean that every request uses the same ObjectView instance,
+    and in a multi-threaded environment (such as mod_wsgi) this will lead to very
+    nasty bugs because of the shared namespace between different requests. That is
+    why you must also import the instantiator to your project and wrap it around
+    your ObjectView subclass in urls.py, ie
+
+        ``url(r'^path/$', instantiator(ObjectView), name="object_view")``
+
+    The instantiator will return a new instance of your class for every request,
+    making it safe for multi-threading.
     """
+    __metaclass__ = ViewMeta
 
     def __init__(self, **kwargs):
         self._load_config_values(kwargs,
@@ -30,14 +62,28 @@ class GenericView(object):
             template_name = None
         )
         if kwargs:
-            raise TypeError("__init__() got an unexpected keyword argument '%s'" % iter(kwargs).next())
+            kwarg = iter(kwargs).next()
+            raise TypeError(
+                "__init__() got an unexpected keyword argument '%s'" % kwarg
+            )
 
     def __call__(self, request, object=None):
-        template = self.get_template(request, object)
-        context = self.get_context(request, object)
-        mimetype = self.get_mimetype(request, object)
-        response = self.get_response(request, object, template, context, mimetype=mimetype)
-        return response
+        try:
+            template = self.get_template(request, object)
+
+            context = self.get_context(request, object)
+            if not isinstance(context, Context):
+                context = RequestContext(request, context)
+
+            mimetype = self.get_mimetype(request, object)
+            response = self.get_response(request,
+                                         object,
+                                         template,
+                                         context,
+                                         mimetype=mimetype)
+            return response
+        except HttpRedirect, e:
+            return e.redirect
 
     def get_template(self, request, obj):
         """
@@ -45,7 +91,9 @@ class GenericView(object):
         """
         names = self.get_template_names(request, obj)
         if not names:
-            raise ImproperlyConfigured("'%s' must provide template_name." % self.__class__.__name__)
+            raise ImproperlyConfigured(
+                "'%s' must provide template_name." % type(self).__name__
+            )
         return self.load_template(request, obj, names)
 
     def get_template_names(self, request, obj):
@@ -60,10 +108,12 @@ class GenericView(object):
         else:
             return self.template_name
 
-    def load_template(self, request, obj, names=[]):
+    def load_template(self, request, obj, names=None):
         """
         Load a template, using self.template_loader or the default.
         """
+        if not names:
+            names = []
         return self.get_template_loader(request, obj).select_template(names)
 
     def get_template_loader(self, request, obj):
@@ -95,7 +145,8 @@ class GenericView(object):
         """
         return self.mimetype
 
-    def get_response(self, request, obj, template, context, **httpresponse_kwargs):
+    def get_response(self, request, obj, template, context,
+                     **httpresponse_kwargs):
         """
         Construct an `HttpResponse` object given the template and context.
         """
@@ -121,7 +172,7 @@ class HttpRedirect(Exception):
         super(Exception, self).__init__(path, *args, **kwargs)
         self.redirect = HttpResponseRedirect(path)
 
-class ObjectViewMeta(type):
+class ViewMeta(type):
     """
     We need to use this meta class to define decorators on ObjectViews.
     """
@@ -133,46 +184,6 @@ class ObjectViewMeta(type):
             for d in decorators:
                 cls.__call__ = d(cls.__call__)
         return cls
-
-class ObjectView(GenericView):
-    """
-    Subclassing ``ObjectView``:
-    ===========================
-
-    Just define your own method called ``get_context`` that returns a context
-    dictionary for rendering a template.  The request will be rendered to
-    template using ``self.template_name`` as the template that the context will
-    be rendered to, so you better define that, too.
-
-    If you find the need to redirect a user to another page from within a context
-    method, simply raise the ``HttpRedirect`` exception with a string path of where
-    you would like to redirect the user to, ie
-
-        ``raise HttpRedirect("/auth/permission_denied/")``
-
-    Defining the URLs:
-    ==================
-
-    In urls.py, you cannot simply pass the object to the url, as you would a
-    function. This would mean that every request uses the same ObjectView instance,
-    and in a multi-threaded environment (such as mod_wsgi) this will lead to very
-    nasty bugs because of the shared namespace between different requests. That is
-    why you must also import the instantiator to your project and wrap it around
-    your ObjectView subclass in urls.py, ie
-
-        ``url(r'^path/$', instantiator(ObjectView), name="object_view")``
-
-    The instantiator will return a new instance of your class for every request,
-    making it safe for multi-threading.
-    """
-    __metaclass__ = ObjectViewMeta
-
-    def __call__(self, request, object=None):
-        try:
-            return super(ObjectView, self).__call__(request, object)
-        except HttpRedirect, e:
-            return e.redirect
-
 
 def instantiator(cls, **kwargs):
     """
