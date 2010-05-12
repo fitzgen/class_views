@@ -1,5 +1,8 @@
 from django.http import HttpResponseRedirect
 
+# This shouldn't be necessary once class based views make it in to django trunk,
+# but till then we need a way to reuse decorators between functions and views.
+# http://www.toddreed.name/content/django-view-class/
 def decorate_method_with(function_decorator):
     """
     This allows seemless re-use of decorators between functions and methods.
