@@ -17,6 +17,19 @@ def decorate_method_with(function_decorator):
         return method_proxy
     return decorate_method
 
+class ViewMeta(type):
+    """
+    We need to use this meta class to define decorators on ObjectViews.
+    """
+    def __new__(mcs, name, bases, attrs):
+        cls = type.__new__(mcs, name, bases, attrs)
+        if hasattr(cls, "decorators"):
+            decorators = list(cls.decorators)
+            decorators.reverse()
+            for d in decorators:
+                cls.__call__ = d(cls.__call__)
+        return cls
+
 class View(object):
     """
     Subclassing ``View``:
@@ -171,19 +184,6 @@ class HttpRedirect(Exception):
     def __init__(self, path, *args, **kwargs):
         super(Exception, self).__init__(path, *args, **kwargs)
         self.redirect = HttpResponseRedirect(path)
-
-class ViewMeta(type):
-    """
-    We need to use this meta class to define decorators on ObjectViews.
-    """
-    def __new__(mcs, name, bases, attrs):
-        cls = type.__new__(mcs, name, bases, attrs)
-        if hasattr(cls, "decorators"):
-            decorators = list(cls.decorators)
-            decorators.reverse()
-            for d in decorators:
-                cls.__call__ = d(cls.__call__)
-        return cls
 
 def instantiator(cls, **kwargs):
     """
