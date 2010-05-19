@@ -1,5 +1,5 @@
 from django.core.exceptions import ImproperlyConfigured
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.template import Context, RequestContext
 
 # This shouldn't be necessary once class based views make it in to django trunk,
